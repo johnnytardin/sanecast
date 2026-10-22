@@ -1,0 +1,28 @@
+[project]
+name = "sanecast"
+version = "0.1.0"
+description = "Demonstração de como projetar dados futuros a partir de dados históricos, com limpeza automática de dado sujo."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Johnny Tardin" }]
+requires-python = ">=3.10,<3.14"
+dependencies = [
+    "numpy",
+    "pandas",
+    "lightgbm",
+    "statsforecast",
+    "holidays",
+]
+
+[project.urls]
+Repository = "https://github.com/johnnytardin/sanecast"
+Issues = "https://github.com/johnnytardin/sanecast/issues"
+Demo = "https://johnnytardin.github.io/sanecast/demo/"
+
+[dependency-groups]
+dev = ["pytest"]
+
+[tool.uv]
+# O projeto é um conjunto de comandos (cli.py), não uma biblioteca: o uv instala só as dependências.
+package = false

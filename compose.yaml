@@ -1,0 +1,17 @@
+# Uso:  mkdir -p data out && docker compose run --rm forecast demo
+# Os dados simulados ficam em ./data e as saídas (painel, gráficos, tabelas) em ./out.
+x-forecast: &forecast
+  build: .
+  image: sanecast
+  # Os arquivos gerados em ./data e ./out pertencem ao seu usuário. Troque com HOST_UID e HOST_GID se o seu não for o 1000.
+  user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+  volumes:
+    - ./data:/app/data
+    - ./out:/app/out
+
+services:
+  forecast:  # qualquer comando do cli.py: demo, simulate, evaluate, today, dashboard, tune
+    <<: *forecast
+  test:  # testes (~2 minutos)
+    <<: *forecast
+    entrypoint: ["python", "tests/test_pipeline.py"]

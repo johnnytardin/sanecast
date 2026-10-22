@@ -1,0 +1,768 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Simulação da previsão de transações</title>
+<style>
+  :root { --green:#059669; --blue:#1d4ed8; --text:#0f172a; --muted:#64748b; --line:#e2e8f0; --amber:#b45309; --red:#be123c; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: Inter, Arial, Helvetica, sans-serif; color:var(--text); background:#f8fafc; }
+  header { background:#fff; border-bottom:1px solid var(--line); padding:20px 32px; }
+  h1 { margin:0 0 4px; font-size:22px; }
+  header p { margin:0; color:var(--muted); font-size:14px; max-width:900px; line-height:1.5; }
+  main { max-width:1180px; margin:0 auto; padding:20px 24px 48px; }
+  .box { background:#fff; border:1px solid var(--line); border-radius:10px; padding:14px 18px; }
+  .guide summary { cursor:pointer; font-weight:600; font-size:15px; }
+  .guide ul { margin:10px 0 4px; padding:0; list-style:none; display:grid; gap:8px; font-size:14px; line-height:1.45; }
+  .guide li { display:flex; gap:12px; align-items:flex-start; }
+  .guide p { font-size:14px; line-height:1.5; margin:8px 0 2px; }
+  .key { flex:0 0 38px; height:16px; margin-top:3px; border-radius:3px; }
+  .controls { display:grid; gap:10px; position:sticky; top:0; z-index:5; margin-top:14px; }
+  .row { display:flex; gap:20px 28px; align-items:center; flex-wrap:wrap; }
+  .row[hidden] { display:none; }
+  .controls label { font-size:14px; display:flex; gap:10px; align-items:center; }
+  .controls small { color:var(--muted); font-size:12px; }
+  select, button { font-size:14px; padding:4px 8px; font-family:inherit; }
+  button { cursor:pointer; background:#fff; border:1px solid #cbd5e1; border-radius:6px; }
+  button:hover { background:#f1f5f9; }
+  .seg { display:inline-flex; }
+  .seg button { border-radius:0; padding:5px 16px; }
+  .seg button:first-child { border-radius:6px 0 0 6px; }
+  .seg button:last-child { border-radius:0 6px 6px 0; margin-left:-1px; }
+  .seg button:disabled { color:#94a3b8; cursor:not-allowed; background:#f8fafc; }
+  .seg button[aria-pressed=true] { background:var(--text); color:#fff; border-color:var(--text); }
+  input[type=range] { width:380px; }
+  #nowLabel { font-variant-numeric: tabular-nums; min-width:52px; font-size:18px; }
+  .notice { font-size:13px; color:var(--amber); background:#fffbeb; border:1px solid #fde68a; border-radius:6px; padding:5px 10px; line-height:1.4; }
+  .notice[hidden] { display:none; }
+  .panel { margin-top:16px; padding-bottom:10px; }
+  .panel h2 { margin:0; font-size:18px; }
+  .summary { margin:4px 0 12px; font-size:14px; line-height:1.5; color:#334155; }
+  .cards { display:grid; grid-template-columns: repeat(auto-fit, minmax(165px, 1fr)); gap:10px; margin-bottom:8px; }
+  .card { background:#f8fafc; border:1px solid var(--line); border-radius:8px; padding:8px 10px; }
+  .card span { display:block; font-size:12px; color:var(--muted); }
+  .card b { display:block; font-size:19px; margin:2px 0; font-variant-numeric: tabular-nums; }
+  .card em { display:block; font-style:normal; font-size:11.5px; color:var(--muted); line-height:1.35; }
+  .good { color:var(--green); } .warn { color:var(--amber); } .bad { color:var(--red); }
+  .chart { position:relative; }
+  .multi svg { cursor:pointer; }
+  svg { width:100%; height:auto; display:block; }
+  .tip { position:absolute; pointer-events:none; background:#0f172a; color:#fff; border-radius:8px; padding:8px 10px;
+         font-size:12px; line-height:1.5; display:none; white-space:nowrap; z-index:6; }
+  .legend { display:flex; flex-wrap:wrap; gap:6px 18px; font-size:12.5px; color:#334155; margin:6px 2px 0; align-items:center; }
+  .legend span { display:inline-flex; align-items:center; }
+  .sw { display:inline-block; width:28px; height:0; margin-right:6px; }
+  .sw.obs { border-top:2.5px solid var(--blue); }
+  .sw.proj { border-top:2.5px dashed var(--green); }
+  .sw.sim { border-top:2px solid #93c5fd; }
+  .sw.prof { border-top:2px dotted #94a3b8; }
+  .sw.band { height:10px; background:rgba(5,150,105,.18); }
+  .sw.future { height:10px; background:#f1f5f9; border:1px solid #cbd5e1; }
+  .badge { display:inline-block; min-width:16px; text-align:center; color:#fff; border-radius:3px; font-size:11px; font-weight:700; margin-right:5px; padding:0 3px; }
+  .events { margin:6px 2px 0; font-size:13.5px; line-height:1.55; }
+  .events p { margin:3px 0; }
+  details.table { margin:8px 2px 0; font-size:13px; }
+  details.table summary { cursor:pointer; color:var(--muted); }
+  details.table .scroll { overflow-x:auto; }
+  table { border-collapse:collapse; margin-top:6px; font-variant-numeric: tabular-nums; }
+  th, td { border-bottom:1px solid var(--line); padding:4px 14px 4px 0; text-align:left; font-weight:normal; white-space:nowrap; }
+  th { color:var(--muted); }
+  th.group { color:var(--text); font-weight:600; border-bottom-color:#cbd5e1; }
+  td small { color:var(--muted); font-size:11.5px; }
+  .glossary { margin-top:16px; font-size:14px; line-height:1.6; }
+  .glossary h3 { font-size:15px; margin:12px 0 2px; }
+  .glossary dt { font-weight:600; margin-top:8px; } .glossary dd { margin:0; color:#334155; }
+  @media (max-width: 1000px) { input[type=range] { width:240px; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Simulação da previsão de transações por canal</h1>
+  <p>Demonstração de como projetar dados futuros a partir do histórico, com dados simulados. Para cada canal de exemplo, este painel mostra
+     quantas transações por minuto estão acontecendo e o que o modelo espera
+     para o resto do dia. Você vê um dia de cada vez ou vários dias juntos, e escolhe o horário "agora" para ver a projeção
+     que o modelo faria com o que sabia naquele momento.</p>
+</header>
+<main>
+  <details class="box guide" open>
+    <summary>Como ler em 30 segundos</summary>
+    <ul>
+      <li><i class="key" style="border-top:3px solid #1d4ed8;height:0;margin-top:9px"></i>
+          <span><b>Linha azul:</b> transações por minuto que já aconteceram, até a linha "agora".</span></li>
+      <li><i class="key" style="border-top:3px dashed #059669;height:0;margin-top:9px"></i>
+          <span><b>Linha verde tracejada:</b> o que o modelo projeta. Nos dias passados e antes do "agora" é a projeção feita de manhã cedo. Depois do "agora" é a projeção atualizada com o que já aconteceu no dia.</span></li>
+      <li><i class="key" style="background:rgba(5,150,105,.18)"></i>
+          <span><b>Faixa verde:</b> onde o modelo espera que caiam 80% dos pontos. Se a linha azul clara sair dela com frequência, a projeção está ruim.</span></li>
+      <li><i class="key" style="border-top:2px solid #93c5fd;height:0;margin-top:9px"></i>
+          <span><b>Linha azul clara, "simulado":</b> o que aconteceria depois do "agora" e nos dias futuros. Ela só existe porque os dados deste painel são simulados. Em uso real, o futuro ainda não aconteceu e essa linha não existe.</span></li>
+      <li><i class="key" style="background:#f1f5f9;border:1px solid #cbd5e1"></i>
+          <span><b>Fundo cinza claro, "futuro: só projeção":</b> tudo o que vem depois da linha vertical "agora". Ali só há projeção.</span></li>
+      <li><i class="key" style="background:#fee2e2"></i>
+          <span><b>Faixas coloridas (modo Dia):</b> eventos que o modelo detectou (queda, retenção depois da queda, pico anormal). Nesses trechos ele não aprende com os dados e continua projetando o volume que o dia teria sem o evento.</span></li>
+      <li><i class="key" style="border-top:2px dotted #94a3b8;height:0;margin-top:9px"></i>
+          <span><b>Linha cinza pontilhada (modo Dia):</b> o dia esperado, calculado de manhã cedo a partir de dias parecidos (mesmo dia da semana, feriado, início de mês).</span></li>
+    </ul>
+    <p><b>Dia:</b> escolha um dia e arraste o horário "agora" para ver como a projeção melhora com mais dados. Dias futuros mostram o dia inteiro.</p>
+    <p><b>Vários dias:</b> um gráfico por canal com todos os dias em sequência, com pontos do tamanho escolhido em Granularidade. Clique em um dia para abri-lo no modo Dia. As letras no alto de cada dia marcam dias sazonais, como feriado e início de mês. A legenda explica cada letra.</p>
+    <p><b>Granularidade:</b> os botões 1 min a 1 dia mudam o tamanho de cada ponto. O padrão é 5 minutos, o intervalo do modelo. Passe o mouse sobre o gráfico para ver os valores de cada ponto.</p>
+  </details>
+
+  <div class="box controls">
+    <div class="row">
+      <div class="seg" role="group" aria-label="Modo de visualização">
+        <button id="modeDay" type="button">Dia</button><button id="modeMulti" type="button">Vários dias</button>
+      </div>
+      <div class="seg" id="gran" role="group" aria-label="Granularidade: tamanho de cada ponto do gráfico">
+        <button type="button" data-g="1">1 min</button><button type="button" data-g="5">5 min</button><button type="button" data-g="15">15 min</button><button type="button" data-g="30">30 min</button><button type="button" data-g="60">1 h</button><button type="button" data-g="360">6 h</button><button type="button" data-g="1440">1 dia</button>
+      </div>
+      <button id="reset" type="button">Voltar ao horário inicial</button>
+      <span id="notice" class="notice" role="status" hidden></span>
+    </div>
+    <div class="row" id="dayControls">
+      <label>Dia <select id="day"></select></label>
+      <label>Agora <input id="now" type="range" aria-label="Horário agora"> <b id="nowLabel"></b></label>
+      <small id="nowHint"></small>
+    </div>
+    <div class="row" id="multiControls" hidden>
+      <label>Período
+        <select id="range">
+          <option value="last7">Últimos 7 dias</option>
+          <option value="next7">Próximos 7 dias</option>
+          <option value="next30">Próximos 30 dias</option>
+          <option value="all">Tudo</option>
+        </select>
+      </label>
+      <small id="multiHint"></small>
+    </div>
+  </div>
+
+  <div id="panels"></div>
+
+  <section class="box glossary">
+    <h3>Glossário</h3>
+    <dl>
+      <dt>Agora</dt><dd>O horário em que o modelo olha para o dia. Ele só vê o que veio antes desse horário. Ao abrir o painel, "agora" está em um horário inicial fixo. O botão "Voltar ao horário inicial" restaura essa escolha.</dd>
+      <dt>Futuro: só projeção</dt><dd>Tudo o que fica depois da linha "agora". O modelo projeta, mas ainda não há valores que aconteceram.</dd>
+      <dt>Simulado</dt><dd>O valor que aconteceria depois do "agora" e nos dias futuros. Ele existe porque os dados deste painel são simulados e servem para conferir a projeção. Em uso real não há essa linha.</dd>
+      <dt>Modo Dia e modo Vários dias</dt><dd>O modo Dia mostra um dia, com cartões e eventos em intervalos de 5 minutos. O modo Vários dias mostra um gráfico por canal com todo o período, com pontos do tamanho escolhido em Granularidade, e uma tabela de totais por dia.</dd>
+      <dt>Granularidade</dt><dd>O tamanho de cada ponto do gráfico. O modelo trabalha em intervalos de 5 minutos. Em 1 minuto a projeção repete o valor do intervalo, e a faixa fica mais larga porque a contagem de um minuto varia mais ao acaso. Em blocos maiores a projeção soma os intervalos. O eixo vertical é sempre em transações por minuto, e a dica do gráfico mostra também o total do bloco.</dd>
+      <dt>Dias sazonais</dt><dd>Dias em que as pessoas fazem transações de um jeito diferente do normal, como feriado, fim de semana prolongado, início de mês e Black Friday. O modelo aprende o efeito de cada um pelo histórico e já considera isso na projeção.</dd>
+      <dt>Letras no alto do gráfico</dt><dd>Cada letra marca um dia sazonal, e a legenda acima dos gráficos diz o que cada uma significa. Cada dia mostra só as marcações mais fortes. Todas as etiquetas aparecem na dica do gráfico, no seletor de dia e na tabela de totais.</dd>
+      <dt>Ritmo do dia</dt><dd>Compara o volume que aconteceu com a projeção do próprio modelo para o dia, numa janela recente. +4% quer dizer que o dia está 4% acima da projeção do modelo. O modelo usa isso para ajustar o resto do dia.</dd>
+      <dt>Diferença da projeção</dt><dd>Em média, quanto a linha verde ficou longe da linha azul clara depois de "agora". Todo canal tem um mínimo que nenhum modelo vence, porque transações são contagens e variam ao acaso de um minuto para o outro. Canais pequenos têm mínimo maior. O cartão compara a diferença com esse mínimo.</dd>
+      <dt>Faixa de 80%</dt><dd>Intervalo em que o modelo espera encontrar 80% dos pontos. Dois em cada dez pontos caem fora, e isso é o esperado.</dd>
+      <dt>Queda, retenção e pico anormal</dt><dd>Queda é o volume cair muito por pelo menos 15 minutos (por exemplo, uma indisponibilidade). Retenção é o pico logo depois, quando as transações represadas chegam. Pico anormal é o volume subir muito sem motivo de calendário. Início de mês, véspera de feriado e feriado são altas ou baixas esperadas e não são eventos.</dd>
+      <dt>Por que 15 minutos para detectar</dt><dd>O modelo só confirma um evento depois de ver 3 intervalos de 5 minutos seguidos fora do normal. Isso evita falsos alarmes, mas atrasa a detecção.</dd>
+    </dl>
+  </section>
+</main>
+<script>
+const DATA = __DATA__;
+const BINS = 288, DAY_MIN = 1440, Z = 1.2816, W = 1200, L = 70, R = 1160;
+const GRANS = [1, 5, 15, 30, 60, 360, 1440];
+const GRAN_LABEL = { 1: "1 minuto", 5: "5 minutos", 15: "15 minutos", 30: "30 minutos", 60: "1 hora", 360: "6 horas", 1440: "1 dia" };
+const MAX_DAYS_PER_MINUTE = 7;
+const DAY_GEO = { H: 250, T: 16, B: 205 };
+const MULTI_GEO = { H: 276, T: 48, B: 220 };
+const RANGES = ["last7", "next7", "next30", "all"];
+const STATE_TEXT = ["normal: o modelo está aprendendo com os dados",
+                    "queda em andamento: o modelo ignora os dados atuais",
+                    "pico anormal em andamento: o modelo ignora os dados atuais",
+                    "recuperação depois da queda: o modelo ignora o pico de retenção"];
+const EVENT_STYLE = { queda: ["queda e retenção", "#fee2e2", "#be123c"], pico: ["pico anormal", "#ede9fe", "#6d28d9"] };
+// Sigla, cor e prioridade de cada etiqueta (menor número = mais forte). Sigla vazia: aparece só na dica e no seletor.
+const TAG_STYLE = {
+  "feriado": ["F", "#be123c", 1], "ponte": ["P", "#dc2626", 2], "fim de semana prolongado": ["L", "#ea580c", 5],
+  "véspera de feriado": ["V", "#c2410c", 7], "dia seguinte ao feriado": ["S", "#b45309", 8],
+  "Black Friday": ["B", "#6d28d9", 3], "Cyber Monday": ["Y", "#7e22ce", 6], "data comercial": ["D", "#9333ea", 9],
+  "Carnaval": ["C", "#0f766e", 4], "virada do ano": ["R", "#0369a1", 10], "fim de ano": ["A", "#0e7490", 11],
+  "início de mês": ["I", "#475569", 12], "meio de mês": ["M", "#64748b", 13], "fim de mês": ["U", "#334155", 14],
+  "férias escolares": ["", "#15803d", 15],
+};
+const TAG_NOTE = {
+  "feriado": "Feriado: o modelo espera volume mais baixo.",
+  "véspera de feriado": "Véspera de feriado: o modelo espera volume mais alto que o normal.",
+  "início de mês": "Início de mês: o modelo espera volume mais alto que o normal.",
+};
+
+const pad = n => String(n).padStart(2, "0");
+const fmt = n => Math.round(n).toLocaleString("pt-BR");
+const fmtRate = v => v >= 10 ? fmt(v) : v.toLocaleString("pt-BR", { maximumFractionDigits: 1 });
+const fmtMin = m => pad(Math.floor(m / 60)) + ":" + pad(m % 60);
+const pct = (n, signed) => (signed && n > 0 ? "+" : "") + (n * 100).toFixed(1).replace(".", ",") + "%";
+const hhmm = bin => pad(Math.floor(bin * 5 / 60)) + ":" + pad(bin * 5 % 60);
+const binOf = (h, m) => Math.floor((h * 60 + m) / 5);
+const fmtDate = iso => iso.slice(8) + "/" + iso.slice(5, 7);
+const fmtDateFull = iso => fmtDate(iso) + "/" + iso.slice(0, 4);
+const esc = s => String(s).replace(/[&<>"']/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
+const sum = (a, from = 0, to = a.length) => { let t = 0; for (let i = from; i < to; i++) t += a[i]; return t; };
+const nearest = (list, v) => list.reduce((best, n) => Math.abs(n - v) < Math.abs(best - v) ? n : best, list[0]);
+const tagStyle = tag => TAG_STYLE[tag] || [tag.charAt(0).toUpperCase(), "#475569", 99];
+// Etiquetas com sigla, das mais fortes para as mais fracas.
+const badgeTags = tags => tags.filter(t => tagStyle(t)[0]).sort((a, b) => tagStyle(a)[2] - tagStyle(b)[2]);
+
+const todayIdx = DATA.days.findIndex(d => d.kind === "today");
+const dayEls = { sel: document.getElementById("day"), now: document.getElementById("now"), label: document.getElementById("nowLabel"),
+                 hint: document.getElementById("nowHint") };
+const rangeSel = document.getElementById("range"), panelsEl = document.getElementById("panels");
+const noticeEl = document.getElementById("notice");
+
+function parseForced(text) {
+  const m = /^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2})$/.exec(text || "");
+  if (!m || +m[2] > 23 || +m[3] > 59) return null;
+  return { date: m[1], bin: binOf(+m[2], +m[3]) };
+}
+
+// Estado inicial: dia aberto e horário "agora". ?now=AAAA-MM-DDTHH:MM escolhe o dia e o horário iniciais; sem ele, o painel
+// abre no dia de referência, no horário inicial fixo.
+function initialState() {
+  const params = new URLSearchParams(location.search);
+  const forced = parseForced(params.get("now"));
+  const clock = forced || { date: DATA.today, bin: DATA.defaultNow };
+  const clockIdx = DATA.days.findIndex(d => d.date === clock.date);
+  const todayNow = nearest(DATA.days[todayIdx].nows, clockIdx === todayIdx ? clock.bin : DATA.defaultNow);
+  const dayIdx = clockIdx >= 0 ? clockIdx : todayIdx;
+  const day = DATA.days[dayIdx];
+  const now = day.kind === "future" ? todayNow : nearest(day.nows, day.kind === "past" ? clock.bin : todayNow);
+  const range = RANGES.includes(params.get("range")) ? params.get("range") : "all";
+  return {
+    mode: params.get("view") === "multi" ? "multi" : "day", range, dayIdx, now, todayNow,
+    gran: GRANS.includes(+params.get("gran")) ? +params.get("gran") : 5,
+    notice: "",
+  };
+}
+const initial = initialState();
+const state = { ...initial };
+
+// Horário "agora" ao abrir um dia: o dia de referência usa o horário atual do painel, o passado usa o mais próximo disponível.
+function defaultNowFor(idx) {
+  const day = DATA.days[idx];
+  if (day.kind === "today") return state.todayNow;
+  return day.kind === "past" ? nearest(day.nows, state.todayNow) : state.now;
+}
+
+// Escala vertical em transações por minuto, com 4 intervalos de tamanho redondo.
+function yScale(maxValue) {
+  const raw = Math.max(maxValue * 1.05, 1) / 4, p = 10 ** Math.floor(Math.log10(raw)), f = raw / p;
+  return 4 * p * ([1, 1.5, 2, 2.5, 3, 4, 5, 6, 8].find(step => f <= step) || 10);
+}
+
+function yAxis(ymax, y) {
+  let s = "";
+  for (let k = 0; k <= 4; k++) {
+    const v = ymax * k / 4;
+    s += `<line x1="${L}" y1="${y(v)}" x2="${R}" y2="${y(v)}" stroke="#e2e8f0"/>`;
+    s += `<text x="${L - 8}" y="${y(v) + 4}" font-size="11" fill="#64748b" text-anchor="end">${fmtRate(v)}</text>`;
+  }
+  return s;
+}
+
+const pointList = (points, y, xOf) => points.map(p => xOf(p.x).toFixed(1) + "," + y(p.v).toFixed(1));
+const polyline = (pts, color, width, dash) =>
+  `<polyline points="${pts.join(" ")}" fill="none" stroke="${color}" stroke-width="${width}" stroke-dasharray="${dash || ""}"/>`;
+const bandPolygon = (hi, lo) =>
+  `<polygon points="${hi.concat(lo.slice().reverse()).join(" ")}" fill="#059669" fill-opacity="0.18"/>`;
+
+function legend(items) {
+  return `<div class="legend">${items.join("")}</div>`;
+}
+const key = (cls, text) => `<span><i class="sw ${cls}"></i>${text}</span>`;
+const badge = tag => `<span><b class="badge" style="background:${tagStyle(tag)[1]}">${esc(tagStyle(tag)[0])}</b>${esc(tag)}</span>`;
+
+// Trechos de evento até "agora". Queda e retenção formam um evento só.
+function findEvents(stateArr, now) {
+  const events = [];
+  let t = 0;
+  while (t <= now) {
+    if (stateArr[t] === 0) { t++; continue; }
+    const kind = stateArr[t] === 2 ? "pico" : "queda";
+    let j = t;
+    while (j <= now && stateArr[j] !== 0 && (stateArr[j] === 2) === (kind === "pico")) j++;
+    events.push({ kind, detected: t, start: Math.max(t - 2, 0), end: j });
+    t = j;
+  }
+  return events;
+}
+
+function evaluate(c, now) {
+  const snap = c.snaps[String(now)], future = c.real.slice(now + 1);
+  const { p50, lo, hi } = snap;
+  let err = 0, tot = 0, inside = 0, noise = 0;
+  future.forEach((v, j) => {
+    err += Math.abs(v - p50[j]); tot += v; noise += Math.sqrt(2 * p50[j] / Math.PI);
+    if (v >= lo[j] && v <= hi[j]) inside++;
+  });
+  const projected = sum(c.real, 0, now + 1) + sum(p50);
+  return { snap, future, err: err / tot, floor: noise / sum(p50), inside: inside / future.length,
+           projected, actualTotal: sum(c.real) };
+}
+
+function verdict(err, floor) {
+  const ratio = err / floor;
+  if (ratio <= 1.35) return ["dentro do esperado", "good"];
+  if (ratio <= 2) return ["um pouco acima do esperado", "warn"];
+  return ["acima do esperado", "bad"];
+}
+
+function card(title, value, hint, cls) {
+  return `<div class="card"><span>${title}</span><b class="${cls || ""}">${value}</b><em>${hint}</em></div>`;
+}
+
+// Granularidade em uso: o modo Dia não tem blocos de 1 dia.
+const effGran = () => state.mode === "day" ? Math.min(state.gran, 360) : state.gran;
+
+const profileModel = c => ({ p50: c.profile, lo: c.lo, hi: c.hi });
+
+// Projeção que vale em cada intervalo de 5 min: a do dia antes de "agora" e a online (snaps) depois.
+function effectiveModel(c, now) {
+  const snap = c.snaps[String(now)], head = a => a.slice(0, now + 1);
+  return { p50: head(c.profile).concat(snap.p50), lo: head(c.lo).concat(snap.lo), hi: head(c.hi).concat(snap.hi) };
+}
+
+// Incerteza de nível de cada intervalo de 5 min, em proporção. Tira da faixa original a parte do ruído de contagem.
+function levelUncertainty(e) {
+  return e.p50.map((p, i) => {
+    const sd = (e.hi[i] - e.lo[i]) / (2 * Z);
+    return p > 0 ? Math.sqrt(Math.max(sd * sd - p, 0)) / p : 0;
+  });
+}
+
+// Projeção de um bloco [start, end) em minutos. A faixa soma a incerteza de nível dos intervalos com o ruído de contagem.
+function modelBlock(e, rel, start, end, gran) {
+  let mu = 0, level = 0;
+  if (gran === 1) {
+    mu = e.p50[Math.floor(start / 5)] / 5;
+    level = rel[Math.floor(start / 5)] * mu;
+  } else {
+    for (let i = start / 5; i < end / 5; i++) { mu += e.p50[i]; level += rel[i] * e.p50[i]; }
+  }
+  const sd = Math.sqrt(level * level + mu), len = end - start;
+  return { mu, v: mu / len, lo: Math.max(mu - Z * sd, 0) / len, hi: (mu + Z * sd) / len };
+}
+
+// Contagem observada (ou simulada) entre dois minutos, usando os dados por minuto só em 1 min.
+function counted(c, start, end, gran) {
+  const n = gran === 1 ? sum(c.real1, start, end) : sum(c.real, start / 5, end / 5);
+  return { n, v: n / (end - start), start, end };
+}
+
+// Blocos do dia alinhados à meia-noite. observedEnd é o minuto até onde há dado observado.
+function buildBlocks(c, e, observedEnd, gran) {
+  const rel = levelUncertainty(e), blocks = [];
+  for (let start = 0; start < DAY_MIN; start += gran) {
+    const end = start + gran, block = { start, end, model: modelBlock(e, rel, start, end, gran) };
+    if (observedEnd > start) block.obs = counted(c, start, Math.min(end, observedEnd), gran);
+    if (observedEnd < end) block.sim = counted(c, Math.max(start, observedEnd), end, gran);
+    blocks.push(block);
+  }
+  return blocks;
+}
+
+// Pontos de cada série em minutos do dia. Blocos de 1 h ou mais viram degraus.
+function pushBlock(list, steps, from, to, v) {
+  if (steps) list.push({ x: from, v }, { x: to, v });
+  else list.push({ x: (from + to) / 2, v });
+}
+
+function blockSeries(blocks, gran, modelFrom) {
+  const steps = gran >= 60, out = { obs: [], sim: [], proj: [], lo: [], hi: [] };
+  blocks.forEach(b => {
+    if (b.obs) pushBlock(out.obs, steps, b.obs.start, b.obs.end, b.obs.v);
+    if (b.sim) pushBlock(out.sim, steps, b.sim.start, b.sim.end, b.sim.v);
+    if (b.end <= modelFrom) return;
+    pushBlock(out.proj, steps, b.start, b.end, b.model.v);
+    pushBlock(out.lo, steps, b.start, b.end, b.model.lo);
+    pushBlock(out.hi, steps, b.start, b.end, b.model.hi);
+  });
+  return out;
+}
+
+// Perfil do dia (projeção feita antes do dia) no tamanho de bloco escolhido, em transações por minuto.
+function profileSeries(profile, gran) {
+  const steps = gran >= 60, list = [];
+  for (let start = 0; start < DAY_MIN; start += gran) {
+    const total = gran === 1 ? profile[Math.floor(start / 5)] / 5 : sum(profile, start / 5, (start + gran) / 5);
+    pushBlock(list, steps, start, start + gran, total / gran);
+  }
+  return list;
+}
+
+// Dica de um bloco: intervalo de tempo, valor por minuto, total no bloco e projeção.
+function blockTip(blocks, gran, minute) {
+  const b = blocks[Math.floor(minute / gran)], observed = b.obs && minute < b.obs.end, part = observed ? b.obs : b.sim;
+  const partial = part.end - part.start < gran ? " (parte do bloco)" : "";
+  const label = observed ? "Observado" : "Simulado (o que aconteceria)";
+  return `<b>${fmtMin(b.start)} a ${fmtMin(b.end)}</b><br>` +
+    `<span style="color:${observed ? "#fff" : "#93c5fd"}">${label}: ${fmtRate(part.v)}/min</span><br>` +
+    `<span style="color:${observed ? "#fff" : "#93c5fd"}">total no bloco: ${fmt(part.n)} transações${partial}</span><br>` +
+    `Projeção: ${fmtRate(b.model.v)}/min (faixa ${fmtRate(b.model.lo)} a ${fmtRate(b.model.hi)})<br>` +
+    `<span style="color:#cbd5e1">total projetado no bloco: ${fmt(b.model.mu)} transações</span>`;
+}
+
+const dayX = m => L + m / DAY_MIN * (R - L);
+
+// Grade do modo Dia: horas no eixo x e escala em transações por minuto no eixo y.
+function dayGrid(ymax, y) {
+  const { T, B } = DAY_GEO;
+  let s = `<text x="${L + 4}" y="${T - 4}" font-size="11" fill="#64748b">transações por minuto</text>`;
+  for (let h = 0; h <= 24; h += 3) {
+    s += `<line x1="${dayX(h * 60)}" y1="${T}" x2="${dayX(h * 60)}" y2="${B}" stroke="#e8edf3"/>`;
+    s += `<text x="${dayX(h * 60)}" y="${B + 16}" font-size="11" fill="#64748b" text-anchor="middle">${pad(h)}:00</text>`;
+  }
+  return s + yAxis(ymax, y);
+}
+
+function dayCharts(c, now) {
+  const m = evaluate(c, now), gran = effGran(), observedEnd = (now + 1) * 5;
+  const blocks = buildBlocks(c, effectiveModel(c, now), observedEnd, gran);
+  const ser = blockSeries(blocks, gran, observedEnd), prof = profileSeries(c.profile, gran);
+  const ymax = yScale(Math.max(...[ser.hi, ser.obs, ser.sim, prof].flatMap(list => list.map(p => p.v))));
+  const { T, B, H } = DAY_GEO;
+  const y = v => B - v / ymax * (B - T);
+  const pts = list => pointList(list, y, dayX);
+  const events = findEvents(c.state, now);
+  const lastObs = ser.obs[ser.obs.length - 1], nowX = dayX(observedEnd);
+
+  let s = `<svg viewBox="0 0 ${W} ${H}">`;
+  s += `<rect x="${nowX}" y="${T}" width="${R - nowX}" height="${B - T}" fill="#f1f5f9"/>`;
+  events.forEach((e, k) => {
+    const [label, fill, stroke] = EVENT_STYLE[e.kind], x0 = dayX(e.start * 5), x1 = dayX(e.end * 5);
+    s += `<rect x="${x0}" y="${T}" width="${x1 - x0}" height="${B - T}" fill="${fill}"/>`;
+    s += `<text x="${k % 2 === 0 ? x0 - 3 : x1 + 3}" y="${T + 12}" font-size="11" fill="${stroke}" font-weight="600" text-anchor="${k % 2 === 0 ? "end" : "start"}">${label}</text>`;
+  });
+  s += dayGrid(ymax, y);
+  s += bandPolygon(pts(ser.hi), pts(ser.lo));
+  s += polyline(pts(prof), "#94a3b8", 1.4, "2,3");
+  s += polyline(pts(ser.sim), "#93c5fd", 1.5);
+  s += polyline(pts(ser.proj), "#059669", 2.4, "7,5");
+  s += polyline(pts(ser.obs), "#1d4ed8", 2.2);
+  s += `<line x1="${nowX}" y1="${T}" x2="${nowX}" y2="${B}" stroke="#334155" stroke-width="1.2"/>`;
+  s += `<circle cx="${dayX(lastObs.x)}" cy="${y(lastObs.v)}" r="4.5" fill="#1d4ed8" stroke="#fff" stroke-width="2"/>`;
+  s += `<text x="${nowX}" y="${B + 34}" font-size="12" font-weight="700" text-anchor="middle">agora ${hhmm(now)}</text>`;
+  s += `<text x="${nowX - 8}" y="${T + 12}" font-size="11" fill="#475569" text-anchor="end">← já aconteceu</text>`;
+  if (nowX < R - 150) s += `<text x="${nowX + 8}" y="${T + 12}" font-size="11" fill="#059669" text-anchor="start">futuro: só projeção →</text>`;
+  s += `<line class="hover" x1="0" y1="${T}" x2="0" y2="${B}" stroke="#0f172a" stroke-opacity=".35" visibility="hidden"/></svg>`;
+
+  const tip = minute => {
+    let html = blockTip(blocks, gran, minute), bin = Math.floor(minute / 5);
+    if (minute < observedEnd && c.state[bin] !== 0) html += `<br><span style="color:#fca5a5">${STATE_TEXT[c.state[bin]]}</span>`;
+    return html + `<br><span style="color:#cbd5e1">Dia esperado de manhã: ${fmtRate(prof[gran >= 60 ? 2 * Math.floor(minute / gran) : Math.floor(minute / gran)].v)}/min</span>`;
+  };
+  return { svg: s, tip, m, events, gran };
+}
+
+const granNote = gran => `<p class="summary" style="margin:6px 2px 0;font-size:12.5px">Cada ponto do gráfico resume ${GRAN_LABEL[gran]}. Os cartões e a tabela usam intervalos de 5 minutos.</p>`;
+
+function dayPanel(name, c, now) {
+  const { svg, tip, m, events, gran } = dayCharts(c, now);
+  const { p50, lo, hi } = m.snap;
+  const real = c.real, state = c.state[now], alphaPct = c.alpha[now] - 1;
+  const ended = p50.length === 0;  // sem intervalos à frente: o dia acabou
+  const [verdictText, verdictClass] = ended ? ["", ""] : verdict(m.err, m.floor);
+  const noProjection = "sem projeção, o dia acabou";
+
+  const rhythm = state === 0 ? pct(alphaPct, true) : "congelado";
+  const rhythmHint = state === 0 ? "em relação à projeção do modelo para o dia, no período recente"
+                                 : "durante o evento o modelo mantém o ritmo de antes";
+  const cards = [
+    card("Agora", fmt(real[now] / 5) + "/min", "transações por minuto, no último intervalo de 5 min"),
+    ended ? card("Próximos 5 min", "fim do dia", noProjection)
+          : card("Próximos 5 min", fmt(p50[0] / 5) + "/min", `faixa de 80%: ${fmt(lo[0] / 5)} a ${fmt(hi[0] / 5)}`),
+    card("Ritmo do dia", rhythm, rhythmHint, state === 0 ? "" : "warn"),
+    ended ? card("Fecha o dia em", "fim do dia", `total do dia: ${fmt(m.actualTotal)} transações`)
+          : card("Fecha o dia em", fmt(m.projected), `na simulação, o total foi ${fmt(m.actualTotal)} (${pct(m.projected / m.actualTotal - 1, true)})`),
+    ended ? card("Diferença da projeção", "fim do dia", noProjection)
+          : card("Diferença da projeção", pct(m.err), `${verdictText}. Mínimo possível por ruído: ${pct(m.floor)}`, verdictClass),
+    ended ? card("Simulado dentro da faixa", "fim do dia", noProjection)
+          : card("Simulado dentro da faixa", Math.round(m.inside * 100) + "%", "esperado: cerca de 80%"),
+  ].join("");
+
+  const summary = `Às ${hhmm(now)}, o canal ${esc(name)} está em ${fmt(real[now] / 5)} transações por minuto. ` +
+    (ended ? `O dia acabou, então não há projeção. O total do dia foi ${fmt(m.actualTotal)} transações. `
+           : `O modelo espera ${fmt(p50[0] / 5)} nos próximos 5 minutos e fechar o dia com cerca de ${fmt(m.projected)} transações. `) +
+    `Situação: ${STATE_TEXT[state]}.`;
+
+  const eventHtml = events.length === 0
+    ? "<p>Nenhum evento detectado até agora. O modelo está aprendendo normalmente com os dados do dia.</p>"
+    : events.map(e => {
+        const [label] = EVENT_STYLE[e.kind];
+        const lag = (e.detected + 1 - e.start) * 5;  // o evento é confirmado no fim do intervalo de 5 min
+        return `<p><b>${label[0].toUpperCase() + label.slice(1)}</b>, de ${hhmm(e.start)} a ${hhmm(e.end)}. ` +
+          `O modelo confirmou às ${hhmm(e.detected + 1)}, ${lag} minutos depois do início. Esse trecho não entrou no aprendizado e a projeção continuou no nível esperado para o dia.</p>`;
+      }).join("");
+
+  const rows = [0, 6, 12, 18, 24].filter(k => k < p50.length).map(k =>
+    `<tr><td>${hhmm(now + 1 + k)}</td><td>${fmt(p50[k] / 5)}</td><td>${fmt(lo[k] / 5)} a ${fmt(hi[k] / 5)}</td><td>${fmt(m.future[k] / 5)}</td></tr>`).join("");
+  const table = ended ? `<p class="summary" style="margin:8px 2px 0">Sem horas à frente: o dia acabou.</p>` : `<details class="table"><summary>Ver os números das próximas 2 horas</summary><div class="scroll"><table>` +
+    `<tr><th>Horário</th><th>Projeção (por min)</th><th>Faixa de 80%</th><th>Simulado (por min)</th></tr>${rows}</table></div></details>`;
+  const keys = legend([key("obs", "observado"), key("proj", "projeção do modelo"), key("band", "faixa de 80%"),
+    key("sim", "simulado: o que aconteceria"), key("prof", "dia esperado de manhã"), key("future", "futuro: só projeção")]);
+
+  return { tip, snap: gran, geo: DAY_GEO, total: DAY_MIN, click: null,
+    html: `<section class="box panel"><h2>${esc(name)}</h2><p class="summary">${summary}</p>` +
+      `<div class="cards">${cards}</div><div class="chart">${svg}<div class="tip"></div></div>${keys}${granNote(gran)}` +
+      `<div class="events">${eventHtml}</div>${table}</section>` };
+}
+
+// Dia futuro: dia inteiro, projeção do dia contra o valor simulado.
+function futurePanel(name, day, c) {
+  const { T, B, H } = DAY_GEO, gran = effGran();
+  const real = c.real, profile = c.profile;
+  const blocks = buildBlocks(c, profileModel(c), 0, gran), ser = blockSeries(blocks, gran, 0);
+  const ymax = yScale(Math.max(...[ser.hi, ser.sim].flatMap(list => list.map(p => p.v))));
+  const y = v => B - v / ymax * (B - T);
+  const pts = list => pointList(list, y, dayX);
+
+  let s = `<svg viewBox="0 0 ${W} ${H}">` + dayGrid(ymax, y);
+  s += bandPolygon(pts(ser.hi), pts(ser.lo));
+  s += polyline(pts(ser.sim), "#93c5fd", 1.5);
+  s += polyline(pts(ser.proj), "#059669", 2.4, "7,5");
+  s += `<line class="hover" x1="0" y1="${T}" x2="0" y2="${B}" stroke="#0f172a" stroke-opacity=".35" visibility="hidden"/></svg>`;
+
+  const totalProj = sum(profile), totalSim = sum(real);
+  let inside = 0;
+  real.forEach((v, j) => { if (v >= c.lo[j] && v <= c.hi[j]) inside++; });
+  const cards = [
+    card("Total projetado do dia", fmt(totalProj), "o que o modelo espera para o dia inteiro"),
+    card("Total simulado", fmt(totalSim), "o que aconteceria nesta simulação"),
+    card("Diferença", pct(totalSim / totalProj - 1, true), "simulado em relação ao projetado"),
+    card("Simulado dentro da faixa", Math.round(inside / BINS * 100) + "%", "esperado: cerca de 80% (em intervalos de 5 minutos)"),
+  ].join("");
+  const summary = `No dia ${fmtDate(day.date)} (${esc(day.weekday)}), o modelo projeta cerca de ${fmt(totalProj)} transações no canal ${esc(name)}. ` +
+    `Na simulação, aconteceriam ${fmt(totalSim)}. Como o dia ainda não começou, o gráfico mostra só a projeção e o simulado.`;
+  const tip = minute => blockTip(blocks, gran, minute);
+  const keys = legend([key("proj", "projeção do modelo"), key("band", "faixa de 80%"), key("sim", "simulado: o que aconteceria")]);
+
+  return { tip, snap: gran, geo: DAY_GEO, total: DAY_MIN, click: null,
+    html: `<section class="box panel"><h2>${esc(name)}</h2><p class="summary">${summary}</p>` +
+      `<div class="cards">${cards}</div><div class="chart">${s}<div class="tip"></div></div>${keys}` +
+      `<p class="summary" style="margin:6px 2px 0;font-size:12.5px">Cada ponto do gráfico resume ${GRAN_LABEL[gran]}.</p></section>` };
+}
+
+function dayView() {
+  const day = DATA.days[state.dayIdx];
+  const panels = Object.entries(day.channels).map(([name, c]) =>
+    day.kind === "future" ? futurePanel(name, day, c) : dayPanel(name, c, state.now));
+  const generic = day.tags.filter(tag => !TAG_NOTE[tag]);
+  const noteTexts = day.tags.filter(tag => TAG_NOTE[tag]).map(tag => TAG_NOTE[tag]);
+  if (generic.length) noteTexts.push(`Dia sazonal: ${generic.join(", ")}. O modelo usa o que aprendeu com dias parecidos no histórico.`);
+  const notes = noteTexts.map(text => `<p class="notice" style="margin:14px 0 0">${esc(text)}</p>`).join("");
+  return { html: notes + panels.map(p => p.html).join(""), panels };
+}
+
+// Minuto do dia até onde há dado observado, em relação a "agora".
+const observedEndOf = (day, now) => day.kind === "past" ? DAY_MIN : day.kind === "today" ? (now + 1) * 5 : 0;
+
+function selectedDays() {
+  const last = DATA.days.length - 1;
+  const [a, b] = { last7: [todayIdx - 7, todayIdx], next7: [todayIdx, todayIdx + 7],
+                   next30: [todayIdx, todayIdx + 30], all: [0, last] }[state.range];
+  let first = Math.max(0, a), days = DATA.days.slice(first, Math.min(last, b) + 1), limited = false;
+  if (effGran() === 1 && days.length > MAX_DAYS_PER_MINUTE) {
+    const start = Math.min(Math.max(todayIdx - first - 3, 0), days.length - MAX_DAYS_PER_MINUTE);
+    first += start; days = days.slice(start, start + MAX_DAYS_PER_MINUTE); limited = true;
+  }
+  return { first, days, limited };
+}
+
+function dayLabels(days, xOf, total, todayK) {
+  const pxPerDay = (R - L) / days.length, step = Math.ceil(54 / pxPerDay), { B } = MULTI_GEO;
+  let s = "";
+  days.forEach((d, k) => {
+    const cx = xOf((k + 0.5) * DAY_MIN);
+    s += `<line x1="${xOf(k * DAY_MIN)}" y1="${MULTI_GEO.T}" x2="${xOf(k * DAY_MIN)}" y2="${B}" stroke="#cbd5e1"/>`;
+    if ((k - todayK) % step !== 0) return;
+    const weight = d.kind === "today" ? "700" : "400";
+    s += `<text x="${cx}" y="${B + 14}" font-size="11" font-weight="${weight}" fill="#334155" text-anchor="middle">${fmtDate(d.date)}</text>`;
+    s += `<text x="${cx}" y="${B + 27}" font-size="10.5" fill="#64748b" text-anchor="middle">${esc(d.weekday.slice(0, 3))}</text>`;
+  });
+  return s + `<line x1="${xOf(total)}" y1="${MULTI_GEO.T}" x2="${xOf(total)}" y2="${B}" stroke="#cbd5e1"/>`;
+}
+
+// Marcações dos dias sazonais no alto de cada dia: as mais fortes, em número que cabe na largura do dia.
+function tagBadges(days, xOf) {
+  const pxPerDay = (R - L) / days.length, maxBadges = pxPerDay >= 90 ? 3 : 2;
+  let s = "";
+  days.forEach((d, k) => {
+    const tags = badgeTags(d.tags).slice(0, maxBadges);
+    if (tags.length === 0) return;
+    const slot = (pxPerDay - 4) / tags.length, size = Math.min(slot, 16);
+    tags.forEach((tag, i) => {
+      const [letter, color] = tagStyle(tag), full = slot >= 6 * tag.length + 10, w = full ? slot : size;
+      const bx = xOf(k * DAY_MIN) + 2 + i * (full ? slot : size);
+      s += `<rect x="${bx}" y="4" width="${w - 1}" height="15" rx="3" fill="${color}"/>`;
+      s += `<text x="${bx + (w - 1) / 2}" y="15" font-size="10.5" font-weight="700" fill="#fff" text-anchor="middle">${esc(full ? tag : letter)}</text>`;
+    });
+  });
+  return s;
+}
+
+function multiPanel(name, view) {
+  const { first, days } = view, total = days.length * DAY_MIN, { T, B, H } = MULTI_GEO, gran = effGran();
+  const xOf = m => L + m / total * (R - L);
+  const todayK = todayIdx - first, nowEnd = todayK * DAY_MIN + (state.todayNow + 1) * 5;
+  const series = { obs: [], sim: [], proj: [], lo: [], hi: [] };
+  const dayBlocks = days.map((d, k) => {
+    const c = d.channels[name], e = d.kind === "today" ? effectiveModel(c, state.todayNow) : profileModel(c);
+    const blocks = buildBlocks(c, e, observedEndOf(d, state.todayNow), gran), ser = blockSeries(blocks, gran, 0);
+    Object.keys(series).forEach(key => ser[key].forEach(p => series[key].push({ x: k * DAY_MIN + p.x, v: p.v })));
+    return blocks;
+  });
+  const ymax = yScale(Math.max(...series.hi.concat(series.obs, series.sim).map(p => p.v)));
+  const y = v => B - v / ymax * (B - T);
+  const pts = list => pointList(list, y, xOf);
+
+  let s = `<svg viewBox="0 0 ${W} ${H}">`;
+  s += `<text x="4" y="36" font-size="11" fill="#64748b">transações por minuto</text>`;
+  if (todayK >= 0 && todayK < days.length) {
+    s += `<rect x="${xOf(nowEnd)}" y="${T}" width="${R - xOf(nowEnd)}" height="${B - T}" fill="#f1f5f9"/>`;
+    const labelX = Math.max(xOf(nowEnd) + 8, L + 70);  // evita cobrir o título do eixo
+    if (R - labelX > 130) s += `<text x="${labelX}" y="36" font-size="11" fill="#475569">futuro: só projeção →</text>`;
+  }
+  s += yAxis(ymax, y) + dayLabels(days, xOf, total, todayK);
+  s += bandPolygon(pts(series.hi), pts(series.lo));
+  s += polyline(pts(series.sim), "#93c5fd", 1.3);
+  s += polyline(pts(series.proj), "#059669", 1.8, "6,4");
+  s += polyline(pts(series.obs), "#1d4ed8", 1.8);
+  s += `<line x1="${xOf(nowEnd)}" y1="${T}" x2="${xOf(nowEnd)}" y2="${B}" stroke="#334155" stroke-width="1.2"/>`;
+  s += `<text x="${xOf(nowEnd)}" y="${B + 43}" font-size="12" font-weight="700" text-anchor="middle">agora ${hhmm(state.todayNow)}</text>`;
+  s += tagBadges(days, xOf);
+  s += `<line class="hover" x1="0" y1="${T}" x2="0" y2="${B}" stroke="#0f172a" stroke-opacity=".35" visibility="hidden"/></svg>`;
+
+  const tip = abs => {
+    const k = Math.floor(abs / DAY_MIN), d = days[k];
+    return `<b>${fmtDateFull(d.date)}, ${esc(d.weekday)}</b><br>` + blockTip(dayBlocks[k], gran, abs % DAY_MIN) +
+      (d.tags.length ? `<br><span style="color:#cbd5e1">${d.tags.map(esc).join(", ")}</span>` : "");
+  };
+  return { tip, snap: gran, geo: MULTI_GEO, total, click: abs => openDay(first + Math.floor(abs / DAY_MIN)),
+    html: `<section class="box panel multi"><h2>${esc(name)}</h2><div class="chart">${s}<div class="tip"></div></div></section>` };
+}
+
+function totalsTable(view) {
+  const names = Object.keys(view.days[0].channels);
+  const head = `<tr><th rowspan="2">Data</th><th rowspan="2">Dia</th><th rowspan="2">Marcações</th>` +
+    names.map(n => `<th class="group" colspan="3">${esc(n)}</th>`).join("") + `</tr><tr>` +
+    names.map(() => "<th>Projetado</th><th>Real</th><th>Diferença</th>").join("") + `</tr>`;
+  const rows = view.days.map(d => {
+    const cells = names.map(n => {
+      const c = d.channels[n], proj = sum(c.profile), real = sum(c.real);
+      const kind = d.kind === "future" ? "simulado " : d.kind === "today" ? "real e simulado " : "";
+      return `<td>${fmt(proj)}</td><td>${kind ? `<small>${kind}</small>` : ""}${fmt(real)}</td><td>${pct(real / proj - 1, true)}</td>`;
+    }).join("");
+    return `<tr><td>${fmtDateFull(d.date)}</td><td>${esc(d.weekday)}</td><td>${esc(d.tags.join(", ")) || "-"}</td>${cells}</tr>`;
+  }).join("");
+  return `<details class="box table" style="margin-top:16px"><summary>Totais por dia</summary>` +
+    `<p class="summary">Projetado é a projeção do dia feita antes de ele começar. Em dias futuros, "Real" é o valor simulado. No dia de referência, é o que já aconteceu mais o simulado depois do "agora".</p>` +
+    `<div class="scroll"><table>${head}${rows}</table></div></details>`;
+}
+
+function multiView() {
+  const view = selectedDays();
+  const names = Object.keys(view.days[0].channels);
+  const tagsInView = badgeTags([...new Set(view.days.flatMap(d => d.tags))]);
+  const limitNote = view.limited
+    ? `<p class="notice" style="margin:8px 0 0">1 minuto em muitos dias fica pesado, mostrando os ${MAX_DAYS_PER_MINUTE} dias mais próximos do dia de referência.</p>` : "";
+  const keys = legend([key("obs", "observado"), key("proj", "projeção do modelo"), key("band", "faixa de 80%"),
+    key("sim", "simulado: o que aconteceria"), key("future", "futuro: só projeção")].concat(tagsInView.map(badge)));
+  const panels = names.map(n => multiPanel(n, view));
+  return { html: `<section class="box panel"><h2>Vários dias</h2>` +
+      `<p class="summary">Cada canal tem a própria escala vertical. Clique em um dia para abri-lo no modo Dia.</p>${limitNote}${keys}</section>` +
+      panels.map(p => p.html).join("") + totalsTable(view), panels };
+}
+
+// Liga o tooltip, a linha vertical e o clique de cada gráfico.
+function attachHover(chart, cfg) {
+  const svg = chart.querySelector("svg"), tip = chart.querySelector(".tip"), hover = svg.querySelector(".hover");
+  const locate = ev => {
+    const box = svg.getBoundingClientRect();
+    const abs = ((ev.clientX - box.left) / box.width * W - L) / (R - L) * cfg.total;
+    return { box, abs, inside: abs >= 0 && abs < cfg.total };
+  };
+  const hide = () => { tip.style.display = "none"; hover.setAttribute("visibility", "hidden"); };
+  svg.addEventListener("mousemove", ev => {
+    const { box, abs, inside } = locate(ev);
+    if (!inside) { hide(); return; }
+    const start = Math.floor(abs / cfg.snap) * cfg.snap, xLine = L + (start + cfg.snap / 2) / cfg.total * (R - L);
+    hover.setAttribute("x1", xLine); hover.setAttribute("x2", xLine); hover.setAttribute("visibility", "visible");
+    tip.innerHTML = cfg.tip(Math.floor(abs)); tip.style.display = "block";
+    tip.style.left = Math.min(ev.clientX - box.left + 14, box.width - tip.offsetWidth - 4) + "px";
+    tip.style.top = (ev.clientY - box.top - 10) + "px";
+  });
+  svg.addEventListener("mouseleave", hide);
+  if (cfg.click) svg.addEventListener("click", ev => { const { abs, inside } = locate(ev); if (inside) cfg.click(abs); });
+}
+
+function openDay(idx) {
+  state.mode = "day"; state.dayIdx = idx; state.now = defaultNowFor(idx);
+  render();
+}
+
+function syncControls() {
+  const day = DATA.days[state.dayIdx], isDay = state.mode === "day";
+  document.getElementById("modeDay").setAttribute("aria-pressed", isDay);
+  document.getElementById("modeMulti").setAttribute("aria-pressed", !isDay);
+  document.getElementById("dayControls").hidden = !isDay;
+  document.getElementById("multiControls").hidden = isDay;
+  dayEls.sel.value = state.dayIdx; rangeSel.value = state.range;
+  document.getElementById("multiHint").textContent =
+    `Cada ponto resume ${GRAN_LABEL[effGran()]}, em transações por minuto. Os períodos incluem o dia de referência.`;
+  document.querySelectorAll("#gran button").forEach(btn => {
+    const g = +btn.dataset.g, blocked = isDay && g === 1440;
+    btn.setAttribute("aria-pressed", g === effGran());
+    btn.disabled = blocked;
+    btn.title = blocked ? "Disponível em Vários dias" : "";
+  });
+  noticeEl.hidden = !state.notice; noticeEl.textContent = state.notice;
+  const input = dayEls.now;
+  if (day.kind === "future") {
+    input.disabled = true; input.max = 0; input.value = 0;
+    dayEls.label.textContent = "dia inteiro";
+    dayEls.hint.textContent = "Dia futuro: o horário não se aplica. O gráfico mostra o dia inteiro.";
+    return;
+  }
+  input.disabled = false; input.min = 0; input.max = day.nows.length - 1; input.step = 1;
+  input.value = day.nows.indexOf(state.now);
+  dayEls.label.textContent = hhmm(state.now);
+  dayEls.hint.textContent = (day.kind === "today" ? "Passos de 5 minutos." : "Passos de 30 minutos.") +
+    " O modelo só vê o que veio antes desse horário.";
+}
+
+function render() {
+  syncControls();
+  const view = state.mode === "multi" ? multiView() : dayView();
+  panelsEl.innerHTML = view.html;
+  panelsEl.querySelectorAll(".chart").forEach((chart, i) => attachHover(chart, view.panels[i]));
+}
+
+// Seletor de dia: passado, dia de referência e futuro em grupos separados.
+function buildDaySelect() {
+  const groups = { past: "Passado", today: "Dia de referência", future: "Futuro: só projeção" };
+  const optgroups = {};
+  DATA.days.forEach((d, i) => {
+    if (!optgroups[d.kind]) {
+      optgroups[d.kind] = document.createElement("optgroup");
+      optgroups[d.kind].label = groups[d.kind];
+      dayEls.sel.appendChild(optgroups[d.kind]);
+    }
+    const marks = (d.kind === "today" ? ["referência"] : []).concat(i === todayIdx + 1 ? ["dia seguinte"] : [], d.tags);
+    optgroups[d.kind].appendChild(new Option(`${fmtDate(d.date)} ${d.weekday}` + (marks.length ? " · " + marks.join(", ") : ""), i));
+  });
+}
+
+buildDaySelect();
+document.getElementById("modeDay").onclick = () => { state.mode = "day"; render(); };
+document.getElementById("modeMulti").onclick = () => { state.mode = "multi"; render(); };
+document.getElementById("reset").onclick = () => { Object.assign(state, initial, { mode: state.mode, range: state.range, gran: state.gran }); render(); };
+dayEls.sel.onchange = () => openDay(+dayEls.sel.value);
+dayEls.now.oninput = () => {
+  state.now = DATA.days[state.dayIdx].nows[+dayEls.now.value];
+  if (state.dayIdx === todayIdx) state.todayNow = state.now;
+  render();
+};
+document.querySelectorAll("#gran button").forEach(btn => { btn.onclick = () => { state.gran = +btn.dataset.g; render(); }; });
+rangeSel.onchange = () => { state.range = rangeSel.value; render(); };
+render();
+</script>
+</body>
+</html>

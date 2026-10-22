@@ -1,0 +1,22 @@
+# ambiente virtual e caches do Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+
+# dados gerados pelo simulador e saídas do modelo (regeneráveis com `python cli.py demo`)
+data/
+out/
+
+# segredos locais e arquivos de editor ou sistema
+.env
+.env.*
+.idea/
+.vscode/
+.DS_Store
+
+# rascunhos locais (posts, anotações)
+tmp/

@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>sanecast: projeção de volume de transações com limpeza automática do histórico</title>
+<meta name="description" content="Demonstração de como projetar volume de transações a partir do histórico, com limpeza automática de incidentes, picos e dias sazonais.">
+<style>
+  :root { --navy:#232f3e; --orange:#ec7211; --ink:#16191f; --gray:#687078; --line:#d5dbdb; --bg:#f2f3f3; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:16px/1.6 -apple-system,"Segoe UI",Helvetica,Arial,sans-serif; color:var(--ink); background:#fff; }
+  header { background:var(--navy); color:#fff; padding:40px 20px; }
+  main, .wrap { max-width:880px; margin:0 auto; }
+  main { padding:32px 20px 48px; }
+  h1 { margin:0 0 8px; font-size:32px; line-height:1.2; }
+  header p { margin:0; color:#d5dbdb; max-width:680px; }
+  h2 { font-size:20px; margin:32px 0 12px; color:var(--navy); }
+  .cta { display:inline-block; margin-top:20px; padding:10px 20px; background:var(--orange); color:#fff; font-weight:700; text-decoration:none; border-radius:4px; }
+  .cta:hover { background:#eb5f07; }
+  .note { background:var(--bg); border-left:4px solid var(--orange); padding:12px 16px; margin:0 0 24px; }
+  ul { padding-left:20px; }
+  li { margin:6px 0; }
+  a { color:#0073bb; }
+  footer { border-top:1px solid var(--line); color:var(--gray); font-size:14px; padding:16px 20px; text-align:center; }
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <h1>sanecast</h1>
+    <p>Projeção de volume de transações com limpeza automática do histórico. Projeto de demonstração, criado como referência e inspiração.</p>
+    <a class="cta" href="demo/">Abrir o painel de exemplo</a>
+  </div>
+</header>
+<main>
+  <div class="note">O painel usa dados simulados. Ele é um arquivo único, sem servidor, gerado pelo comando <code>uv run cli.py demo</code>.</div>
+
+  <h2>Documentação</h2>
+  <ul>
+    <li><a href="https://github.com/johnnytardin/sanecast#readme">README</a>: visão geral, pré-requisitos e início rápido.</li>
+    <li><a href="https://github.com/johnnytardin/sanecast/blob/main/docs/METHOD.md">Método</a>: limpeza, perfil do dia, ajuste ao vivo e faixa de incerteza.</li>
+    <li><a href="https://github.com/johnnytardin/sanecast/blob/main/docs/DATA.md">Dados</a>: formato de entrada, histórico mínimo e simulador.</li>
+    <li><a href="https://github.com/johnnytardin/sanecast/blob/main/docs/RESULTS.md">Resultados</a>: erro, cobertura da faixa e limites.</li>
+    <li><a href="https://github.com/johnnytardin/sanecast/blob/main/docs/ARCHITECTURE.md">Arquitetura</a>: da demonstração à produção.</li>
+  </ul>
+
+  <h2>Código</h2>
+  <ul>
+    <li><a href="https://github.com/johnnytardin/sanecast">github.com/johnnytardin/sanecast</a> (licença MIT)</li>
+    <li><a href="https://github.com/johnnytardin/sanecast/issues">Issues</a>: relate casos em que a limpeza errou.</li>
+  </ul>
+</main>
+<footer>O sanecast é uma demonstração e não uma solução pronta para produção.</footer>
+</body>
+</html>
