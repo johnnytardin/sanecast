@@ -37,6 +37,13 @@ GRID = {
     "alpha_prior_bins 12": dict(alpha_prior_bins=12),
     "alpha_tau 12": dict(alpha_tau=12),
     "alpha_tau 48": dict(alpha_tau=48),
+    "edge_step 1 (sem degrau)": dict(edge_step=1.0),
+    "edge_step 2.0": dict(edge_step=2.0),
+    "level_knots vazio (só a reta)": dict(level_knots=()),
+    "level_knot_scale 100": dict(level_knot_scale=100.0),
+    "trend_cap_days 3": dict(trend_cap_days=3),
+    "fast_low_ratio 0 (sem via rápida)": dict(fast_low_ratio=0.0, fast_high_ratio=float("inf")),
+    "slow_window 0 (sem via lenta)": dict(slow_window=0),
 }
 
 
