@@ -7,6 +7,7 @@ Um comando para cada etapa; `demo` roda tudo.
     uv run cli.py today --now 15:30     # gráfico SVG do dia, como se fossem 15:30
     uv run cli.py dashboard             # painel HTML interativo: últimos dias, hoje e os próximos 30 dias
     uv run cli.py tune                  # testa variações dos hiperparâmetros (validação e teste)
+    uv run cli.py backtest --seeds 1,2,3  # erro médio e desvio em vários períodos e vários históricos simulados
 
 Os dados simulados acompanham a data do computador: terminam hoje e o painel mostra 30 dias à frente. Quando os comandos
 `evaluate`, `today`, `dashboard` ou `tune` encontram dados simulados de outro dia, geram de novo até hoje.
@@ -22,13 +23,14 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from sanecast import quantile_model  # noqa: E402
+from sanecast import backtest, quantile_model  # noqa: E402
 from sanecast.config import BIN_MINUTES, DATA_DIR, OUT_DIR, ROOT  # noqa: E402
 from sanecast.dashboard import build_dashboard  # noqa: E402
 from sanecast.data import load_future, load_minutes, load_series, load_truth  # noqa: E402
 from sanecast.pipeline import Forecaster  # noqa: E402
 from sanecast.report import render_day_svg  # noqa: E402
 from sanecast.simulate import simulate  # noqa: E402
+from sanecast.simulate_hard import simulate_hard  # noqa: E402
 from sanecast.snapshots import compute_snapshots  # noqa: E402
 from sanecast.tuning import run_grid  # noqa: E402
 from sanecast.workflow import run_evaluation  # noqa: E402
@@ -89,7 +91,7 @@ def print_evaluation(result):
 
 
 def cmd_simulate(args):
-    path = simulate(today=args.today)
+    path = (simulate_hard if args.hard else simulate)(today=args.today)
     print(f"Data written to {shown(path)} (+ truth_1min.csv, future_1min.csv)")
 
 
@@ -152,8 +154,42 @@ def cmd_tune(args):
     print(result[["variant", "validation:mean", "test:mean"]].round(2).to_string())
 
 
+def cmd_backtest(args):
+    """Avalia vários períodos seguidos (origem móvel) e, com --seeds, vários históricos simulados. Mostra média e desvio."""
+    if args.seeds:
+        metrics, coverage = backtest.seeds_backtest([int(s) for s in args.seeds.split(",")], n_origins=args.origins,
+                                                    window_days=args.window,
+                                                    generator=simulate_hard if args.hard else simulate)
+    else:
+        ensure_data()
+        days, series = load_series()
+        metrics, coverage = backtest.rolling_origin(days, series, load_truth(days), n_origins=args.origins, window_days=args.window)
+    summary = backtest.summarize(metrics, ["wape_exp", "mase"])
+    cover = backtest.summarize(coverage, ["coverage", "width", "interval_score", "pinball"])
+    OUT_DIR.mkdir(exist_ok=True)
+    summary.to_csv(OUT_DIR / "backtest_metrics.csv", index=False)
+    cover.to_csv(OUT_DIR / "backtest_coverage.csv", index=False)
+    runs = int(summary.runs.max())
+    shown_methods = ["model", "model_lgbm_p50", "no_cleaning", "last_week"]
+    for horizon in ("5min", "1h"):
+        part = summary[(summary.horizon == horizon) & summary.method.isin(shown_methods)]
+        table = part.assign(text=part.apply(lambda r: f"{100 * r.wape_exp_mean:.2f} ±{100 * r.wape_exp_std:.2f}", axis=1)).pivot(
+            index=["channel", "scenario"], columns="method", values="text")
+        print(f"\nWAPE vs true rate (%), horizon {horizon}: mean ±std over {runs} runs. Lower is better.")
+        print(table[[m for m in shown_methods if m in table]].to_string())
+    part = cover[cover.scenario != "event"]
+    table = part.pivot_table(index=["channel", "scenario"], columns="horizon", values="coverage_mean", sort=False)
+    order = [h for h in ("5min", "15min", "30min", "1h", "2h", "4h", "8h") if h in table]
+    print(f"\nCoverage of the P10-P90 band (target 80%), mean over {runs} runs")
+    print(table[order].round(2).to_string())
+    score = part.pivot_table(index="channel", columns="horizon", values="interval_score_mean")
+    print("\nInterval score / mean target (lower is better), mean over scenarios")
+    print(score[order].round(3).to_string())
+    print(f"\nFull tables in {shown(OUT_DIR)}/backtest_metrics.csv and backtest_coverage.csv")
+
+
 def cmd_demo(args):
-    cmd_simulate(argparse.Namespace(today=None))
+    cmd_simulate(argparse.Namespace(today=None, hard=False))
     cmd_evaluate(argparse.Namespace(start=None, end=None, no_statsforecast=False))
     cmd_today(argparse.Namespace(day=None, now="15:30"))
     cmd_dashboard(argparse.Namespace(past_days=7, future_days=30))
@@ -164,6 +200,7 @@ def main():
     sub = parser.add_subparsers(dest="command", required=True)
     p = sub.add_parser("simulate", help="generate the simulated data up to today (and 30 days ahead)")
     p.add_argument("--today", default=None, help="last day of the history, YYYY-MM-DD (default: today's date).")
+    p.add_argument("--hard", action="store_true", help="harder simulator: additive seasonality, level steps, unknown anomalous days, random events")
     p.set_defaults(func=cmd_simulate)
     p = sub.add_parser("evaluate", help="measure the error of the model and the baselines")
     p.add_argument("--start", default=None, help="first evaluated day (default: 20 days before --end)")
@@ -179,6 +216,12 @@ def main():
     p.add_argument("--future-days", type=int, default=30, help="simulated days after today (default %(default)s, max 30)")
     p.set_defaults(func=cmd_dashboard)
     sub.add_parser("tune", help="test hyperparameter variations").set_defaults(func=cmd_tune)
+    p = sub.add_parser("backtest", help="rolling-origin evaluation over several periods and simulated histories")
+    p.add_argument("--origins", type=int, default=3, help="consecutive periods, newest last day = last day of the data (default %(default)s)")
+    p.add_argument("--window", type=int, default=21, help="days in each period (default %(default)s)")
+    p.add_argument("--seeds", default=None, help="comma-separated simulator seeds, e.g. 1,2,3 (default: the data in data/)")
+    p.add_argument("--hard", action="store_true", help="with --seeds, use the harder simulator (simulate_hard)")
+    p.set_defaults(func=cmd_backtest)
     sub.add_parser("demo", help="run everything in sequence").set_defaults(func=cmd_demo)
     args = parser.parse_args()
     args.func(args)
