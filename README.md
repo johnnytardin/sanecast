@@ -114,6 +114,7 @@ e copie `out/dashboard.html` para esse caminho. O gráfico do dia tem este forma
 | `out/projection_AAAA-MM-DD.svg` | Gráfico do dia: observado, projeção do resto do dia e faixa | `today` | você |
 | `out/dashboard.html` | Painel interativo. Os dados ficam dentro do arquivo, que não lê nenhum CSV ao abrir | `dashboard` | navegador |
 | `out/tuning_grid.csv` | Erro de cada variante de hiperparâmetros | `tune` | você |
+| `out/backtest_metrics.csv`, `out/backtest_coverage.csv` | Média, desvio e número de execuções de cada métrica | `backtest` | você |
 
 ## Como o modelo funciona
 
@@ -171,10 +172,13 @@ continuamente sobre os dados que chegam, conforme [docs/ARCHITECTURE.md](docs/AR
 uv run cli.py demo                          # executa tudo
 uv run cli.py simulate                      # dados até HOJE (data do computador) e 30 dias à frente
 uv run cli.py simulate --today AAAA-MM-DD   # último dia do histórico (padrão: hoje)
+uv run cli.py simulate --hard               # simulador realista: sazonalidade aditiva, degraus de nível, choques comuns, campanhas, quinzena, dias anômalos desconhecidos, eventos aleatórios
 uv run cli.py evaluate                      # erro do modelo e das comparações (últimos 21 dias dos dados)
 uv run cli.py today --now 15:30             # gráfico do dia, como se fossem 15:30 (--day AAAA-MM-DD para outro dia)
 uv run cli.py dashboard                     # painel: 7 dias passados, dia de referência e 30 dias à frente (--past-days, --future-days)
 uv run cli.py tune                          # testa variações dos hiperparâmetros (validação e teste)
+uv run cli.py backtest --seeds 1,2,3        # origem móvel e vários históricos simulados: média e desvio do erro e da cobertura
+uv run cli.py backtest --seeds 1,2,3 --hard # o mesmo com o simulador difícil (sem gabarito de calendário a favor do modelo)
 uv run tests/test_pipeline.py               # testes (cerca de 3 minutos)
 ```
 
@@ -240,7 +244,7 @@ Com dados reais não há gabarito. O `evaluate` mede o erro contra o observado, 
   14 meses ou mais.
 - Uma mudança permanente de patamar é indistinguível de um incidente longo e só deixa de ser tratada como sujeira quando os dias
   parecidos passam a mostrar o novo patamar.
-- Confirmar um evento leva 15 minutos, e nesse intervalo a previsão ainda é afetada por ele.
+- Confirmar um evento leva 15 minutos (1 intervalo para quedas e picos extremos; cerca de 1 h para degradações em rampa, pela via lenta), e nesse intervalo a previsão ainda é afetada por ele.
 
 A lista completa está em [docs/RESULTS.md](docs/RESULTS.md#8-limites).
 
@@ -253,6 +257,8 @@ pyproject.toml, uv.lock      dependências e versões fixas, geridas pelo uv
 sanecast/
   config.py                  todos os hiperparâmetros, comentados (Config)
   simulate.py                simulador de dados, com eventos de 20 minutos a 4 horas
+  simulate_hard.py           simulador difícil, para validar o modelo sem premissas que o favoreçam
+  backtest.py                avaliação em várias janelas e históricos simulados (média e desvio)
   data.py                    leitura dos CSVs e agrupamento em intervalos de 5 minutos
   day_features.py            calendário (feriado, véspera, início de mês) e distância entre dias
   cleaning.py                detecção de dado sujo no histórico
