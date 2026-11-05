@@ -21,7 +21,8 @@ projeta o resto do dia e os próximos 30 dias. Os dados vêm de um simulador. Ao
 | faixa P10 a P90 (LightGBM) e faixa dos dias futuros | `sanecast/quantile_model.py`, `snapshots.py` |
 | orquestrar tudo | `sanecast/pipeline.py` (`Forecaster`) |
 | modelos de comparação (StatsForecast `SeasonalNaive` e `MSTL`, semana passada) | `sanecast/baselines.py`, usados só em `evaluate` |
-| simular dados e eventos | `sanecast/simulate.py` |
+| simular dados e eventos | `sanecast/simulate.py` (simples, o dos números de referência) e `sanecast/simulate_hard.py` (realista: deriva intradiária, choque comum, campanhas, quinzena, degradação lenta) |
+| erro médio e desvio em várias janelas e históricos | `sanecast/backtest.py` |
 | qualquer número ajustável | `sanecast/config.py` (`Config`) |
 | painel e gráfico | `sanecast/dashboard.py`, `templates/dashboard.html`, `report.py` |
 
@@ -33,7 +34,8 @@ uv run cli.py demo              # simula, avalia, gráfico e painel (~2 min)
 uv run cli.py evaluate          # erro e cobertura, últimos 21 dias
 uv run cli.py dashboard         # painel com 7 dias passados, hoje e 30 à frente
 uv run cli.py tune              # variações de hiperparâmetros
-uv run tests/test_pipeline.py   # 16 testes, ~3 min
+uv run cli.py backtest --hard --seeds 1,2,3  # erro médio e desvio no simulador difícil (~15 min)
+uv run tests/test_pipeline.py   # 28 testes, ~10 min
 ```
 
 Bibliotecas: LightGBM só na faixa P10 a P90 (`quantile_model.py`). StatsForecast só como comparação na avaliação, nunca na projeção
@@ -58,6 +60,7 @@ disco, tudo é refeito a cada execução. A tabela completa está no README, se�
 
 ## Cuidados antes de mudar algo
 
+0. **Valide também no simulador difícil** (`simulate --hard`, `backtest --hard`). Um ajuste que só melhora a referência pode estar aproveitando premissas do simulador simples (forma igual em todo dia, sem deriva).
 1. **Os números da documentação valem para os dados de referência** (`data/reference/`, gerados com `REFERENCE_DAY` em `simulate.py`). Os testes usam `data/reference/`, que não muda
    com o relógio. Se mudar o modelo, execute `evaluate` sobre esses dados e atualize README e `docs/RESULTS.md`. Comparar um dia com outro
    sem fixar a data mistura efeito do calendário com efeito da mudança.

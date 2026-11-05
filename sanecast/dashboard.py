@@ -11,8 +11,6 @@ o valor simulado para comparar.
 import json
 from pathlib import Path
 
-import pandas as pd
-
 from .config import BIN_MINUTES, BINS_PER_DAY
 from .day_features import build_day_features
 from .snapshots import compute_snapshots, day_ahead_band

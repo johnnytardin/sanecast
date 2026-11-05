@@ -4,10 +4,12 @@ Para cada dia `d`:
 1. referência = mediana dos `cleaning_k` dias mais parecidos de `d` (sem o próprio `d`), multiplicada pelo nível do dia
    (mediana de y / referência no trecho diurno);
 2. razão = média móvel de 3 bins de y / referência;
-3. queda: `min_run_bins` bins seguidos com razão abaixo de `low_ratio`, de qualquer duração. Depois dela vem a retenção:
+3. queda: `min_run_bins` bins seguidos com razão abaixo de `low_ratio`, de qualquer duração, e que comece com um degrau (veja `has_step`). Depois dela vem a retenção:
    os bins marcados continuam enquanto a razão fica acima de `retention_exit_ratio` e terminam quando `min_run_bins` bins seguidos
    voltam a ficar abaixo dela. Nenhuma duração é presumida;
-4. pico anômalo: `min_run_bins` bins seguidos com razão acima de `high_ratio`.
+4. pico anômalo: `min_run_bins` bins seguidos com razão acima de `high_ratio`, também com degrau no começo.
+O degrau separa um evento (começa de uma vez) de um dia com forma de curva própria, como ponte ou Carnaval, em que a razão
+contra os dias parecidos desce devagar e fica baixa por horas. Sem ele esses dias saem do treino e o modelo nunca aprende o efeito deles.
 A 2ª passada refaz a referência sem os bins marcados na 1ª e mede o nível do dia só nos bins que sobraram, para uma queda
 longa não puxar o nível para baixo. Bins com referência abaixo de MIN_REFERENCE_COUNT não são julgados.
 """
@@ -33,6 +35,16 @@ def find_runs(condition, min_len):
             runs.append((t, j))
         t = max(j, t + 1)
     return runs
+
+
+def has_step(ratio, start, cfg):
+    """O trecho que começa em `start` começa com um degrau? Compara a razão de antes da borda (3 a 2 bins antes) com a de depois
+    (1 a 2 bins depois): a média móvel de 3 bins espalha a borda por uns 3 bins, e uma queda real muda `edge_step` vezes ou mais nesse intervalo.
+    Trechos nos primeiros bins do dia não têm o que comparar e valem."""
+    if cfg.edge_step <= 1 or start < 3:
+        return True
+    before, after = np.median(ratio[start - 3 : start - 1]), np.median(ratio[start + 1 : start + 3])
+    return max(before, after) >= cfg.edge_step * max(min(before, after), 1e-9)
 
 
 def retention_end(ratio, reliable, start, cfg):
@@ -64,11 +76,15 @@ def clean_history(y, days, cfg):
             ratio = np.convolve(y[d], np.ones(3) / 3, "same") / np.maximum(reference, 1e-9)
             reliable = reference >= MIN_REFERENCE_COUNT
             for a, b in find_runs((ratio < cfg.low_ratio) & reliable, cfg.min_run_bins):
+                if not has_step(ratio, a, cfg):
+                    continue
                 found[d, max(a - 1, 0) : b] = OUTAGE
                 end = retention_end(ratio, reliable, b, cfg)
                 after = found[d, b:end]
                 after[after == 0] = RETENTION
             for a, b in find_runs((ratio > cfg.high_ratio) & reliable, cfg.min_run_bins):
+                if not has_step(ratio, a, cfg):
+                    continue
                 segment = found[d, max(a - 1, 0) : b + 1]
                 segment[segment == 0] = SURGE
         marks = found

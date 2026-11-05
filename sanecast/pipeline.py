@@ -55,7 +55,7 @@ class Forecaster:
     def _cleaning_key(self, channel, train_end):
         c = self.cfg
         return (channel, train_end, c.cleaning_k, c.cleaning_passes, c.low_ratio, c.high_ratio, c.min_run_bins,
-                c.retention_margin_bins, c.retention_exit_ratio, c.max_dirty_fraction)
+                c.retention_margin_bins, c.retention_exit_ratio, c.max_dirty_fraction, c.edge_step)
 
     def prepare(self, train_end, treat=True):
         """Limpa o histórico anterior a `train_end`. Retorna {canal: Prepared}."""
@@ -76,7 +76,8 @@ class Forecaster:
             clean = y.copy()
             clean[pool] = np.where(mask, np.nan, y[pool])
             usable = [e for e in pool if np.isnan(clean[e]).mean() <= self.cfg.max_dirty_fraction]
-            prepared[channel] = Prepared(clean, usable, mask, pool, LevelModel(clean, usable, self.feats))
+            prepared[channel] = Prepared(clean, usable, mask, pool, LevelModel(clean, usable, self.feats, ridge_grid=self.cfg.ridge_grid,
+                                                                  knots=self.cfg.level_knots, knot_scale=self.cfg.level_knot_scale, trend_cap=self.cfg.trend_cap_days))
         self._prepared[key] = prepared
         return prepared
 

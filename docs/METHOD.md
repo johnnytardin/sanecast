@@ -61,6 +61,7 @@ Para cada dia `d` do histórico:
 3. **Razão suavizada.** Média móvel de 3 intervalos de `y[d] / referência`.
 4. **Marcação.** Intervalos com referência abaixo de 15 transações são ignorados, porque o ruído é grande demais para julgar.
    - Queda: razão abaixo de 0,55 por 3 intervalos seguidos ou mais (15 minutos ou mais, sem limite de duração). Marca esses intervalos e o anterior.
+   - Início abrupto: queda e pico só valem se a razão muda `edge_step` (1,4) vezes ou mais na borda (mediana dos 2 intervalos antes contra os 2 depois). Sem isso, um dia com curva própria (ponte, Carnaval, fim de ano), em que a referência tem a forma errada, afundava a razão por horas e saía do treino com o efeito por aprender (`cleaning.has_step`).
    - Retenção: depois de uma queda, continua enquanto a razão fica acima de 1,10 (`retention_exit_ratio`) e termina quando 3 intervalos seguidos voltam abaixo disso, mais 2 intervalos de margem (`retention_margin_bins`). Nenhuma duração é presumida.
    - Pico anormal: razão acima de 1,45 por 3 intervalos seguidos ou mais, também sem limite de duração.
 5. **Segunda passada.** Repete tudo com a referência calculada sem os trechos achados na primeira, e com o nível do dia medido só nos intervalos que sobraram. Sem isso, um evento no dia vizinho distorce a referência e um evento longo distorce o nível.
@@ -81,10 +82,15 @@ Para cada dia limpo, o nível `L_d` é a mediana de `y[d,b] / referência_global
 
 ```text
 log L_d = β0 + β_dow[dia da semana] + Σ β_marca · marca(d)        (14 marcas de dia sazonal, em `FLAGS`)
-          + β_início_de_mês[dia do mês] (só no início de mês) + β_t·t + ε,      ε ~ N(0, σ²)
+          + β_início_de_mês[dia do mês] (só no início de mês) + β_t·t + Σ β_k·max(0, t − (T − k)) + ε,      ε ~ N(0, σ²)
 ```
 
+A tendência é uma reta mais uma dobra para cada `k` em `level_knots` (90 e 30 dias antes do fim do histórico `T`), com penalidade `level_knot_scale` (1000) vezes maior que a dos demais termos, e para de crescer `trend_cap_days` (7) dias depois do fim do histórico.
+A reta sozinha extrapola mal quando o nível muda de ritmo (degrau, ciclo anual): no simulador difícil ela deixava o erro do dia seguinte em 9,8% no app, com viés de +6%. As dobras ancoradas no fim deixam os dados recentes mandar na tendência, e a penalidade impede que uma inclinação ruidosa a domine. Na simulação simples o resultado é igual ou um pouco melhor.
+
 O ajuste usa mínimos quadrados com uma penalidade ridge pequena (`1e-3`) em tudo, menos no intercepto.
+Com `Config(ridge_grid=...)` a penalidade pode ser escolhida por validação com origem móvel (`profile.select_ridge`: 4 janelas de 14 dias, erro em escala log).
+Fica desligado por padrão: nas medições a escolha caiu sempre no valor mais forte e piorou o feriado (veja [RESULTS.md](RESULTS.md), seção 4).
 
 A regressão estima o nível porque os efeitos de calendário se multiplicam. Dois dias sazonais podem coincidir, como um feriado no início do mês, e o dia tem os dois efeitos.
 A escolha do "dia mais parecido" não reproduz essa combinação e, quando encontra um único exemplo, ele traz os dois efeitos de uma vez.
@@ -151,8 +157,12 @@ A razão do momento é `razão(t) = obs(t) / (α_ref · P(t))`, onde `α_ref` é
 |---|---|---|---|
 | NORMAL | início do dia | só pelas transições abaixo | atualiza o alfa |
 | OUTAGE | 3 intervalos seguidos com razão abaixo de 0,55 | 2 seguidos acima de 0,8 vão para RECOVERY | congela o alfa de antes da queda |
-| SURGE | 3 intervalos seguidos com razão acima de 1,45 | 3 seguidos entre 0,8 e 1,25 voltam a NORMAL | congela o alfa |
-| RECOVERY | fim da queda | 3 seguidos entre 0,8 e 1,25 voltam a NORMAL | ignora o pico de retenção |
+| SURGE | 3 intervalos seguidos com razão acima de 1,45 | 3 seguidos dentro da faixa de retorno voltam a NORMAL | congela o alfa |
+| RECOVERY | fim da queda | 3 seguidos dentro da faixa de retorno voltam a NORMAL | ignora o pico de retenção |
+
+**Faixa de retorno** (`forecasting.recovery_band`): `1 ± max(recovery_margin, recovery_z / √esperado)`, com `esperado = alfa congelado · perfil` do intervalo, limitada a
+`recovery_low` (0,8) e `recovery_high` (1,25). Em volume alto o ruído é pequeno e a faixa estreita até ±5%, então uma retenção de +10% não conta como normal e o alfa não a aprende.
+Em volume baixo (o whatsapp, ≈14% de ruído por intervalo) a faixa vai aos limites 0,8 e 1,25, como antes.
 
 Nenhum estado tem prazo: cada um dura até o volume voltar ao normal ou até o fim do dia (`max_event_bins`). No dia seguinte a máquina recomeça em NORMAL.
 
@@ -160,7 +170,19 @@ O alfa congelado é o de 3 intervalos antes da confirmação, para não incluir 
 anteriores ao gatilho ficam inválidos para o cálculo do alfa. Durante um incidente a projeção continua no nível que o dia teria sem
 ele, e a retenção posterior não é incorporada como novo patamar.
 
-A confirmação exige 3 intervalos (15 minutos). Nesse período a previsão ainda é afetada pelo evento.
+A confirmação normal exige 3 intervalos (15 minutos). A **via rápida** confirma com 1 intervalo (`fast_run_bins`) quando a razão fica abaixo de 0,35
+(`fast_low_ratio`) ou acima de 1,8 (`fast_high_ratio`) e, ao mesmo tempo, a `fast_z` (6) desvios de contagem do esperado (`1 ∓ fast_z / √esperado`).
+A segunda condição impede o falso alarme em volume baixo: no whatsapp (≈14% de ruído por intervalo) o limiar efetivo fica perto de zero, e só uma queda total dispara a via rápida.
+
+A **via lenta** pega degradações em rampa (15% a 40% em 30 a 60 minutos), que o alfa absorve antes de qualquer razão cruzar 0,55. Ela soma `slow_window` (12) intervalos e compara com o que o alfa
+de `slow_lag` (12) intervalos antes previa para eles: `razão_lenta = Σ obs / (α(t − slow_lag) · Σ perfil)`. O gatilho exige razão abaixo de 0,88 (`slow_low_ratio`) ou acima de 1,14 (`slow_high_ratio`)
+e, ao mesmo tempo, a `slow_z` (6) desvios de contagem do esperado, por `slow_run_bins` (6) intervalos seguidos, e só vale se nenhum dos 24 intervalos olhados foi marcado como evento. A queda
+vira OUTAGE e o pico vira SURGE, com o alfa congelado no nível de antes da rampa e a saída pela faixa de retorno (como no SURGE). A via lenta leva cerca de 1 h para confirmar (no teste, 14 intervalos depois do início de uma rampa de 40 minutos) e só
+vale para rampas de até ~1 h: uma deriva mais lenta que isso é seguida pelo próprio alfa.
+Os parâmetros foram escolhidos numa grade sobre os dois simuladores: valores mais frouxos (janela 6, `slow_z` 4, 3 intervalos) geravam centenas de falsos alarmes no simulador difícil, onde a
+oscilação do nível, o choque comum e as campanhas imitam uma degradação.
+Sem a condição de ruído, os mesmos limiares geraram 710 a 2.280 intervalos falsos no whatsapp em 4 janelas (contra 85 de base). Com ela, o número ficou igual ao da base.
+Antes da confirmação a previsão ainda é afetada pelo evento.
 
 ## 5. Faixa de incerteza (`quantile_model.py`, `snapshots.py`)
 
@@ -172,6 +194,8 @@ A perda é a pinball: `L_q = max(q·(y−ŷ), (q−1)·(y−ŷ))`.
 Atributos: alfa, razões observado/perfil nas janelas de 1, 3, 6 e 12 intervalos, horizonte, `log(1+P)`, seno e cosseno da hora do intervalo previsto,
 dia da semana, feriado, véspera, dia seguinte, ponte, fim de semana prolongado, início e fim de mês e canal (categórico).
 
+Além dos quantis P10 e P90 da faixa, o modelo estima o P50 da razão. Esse P50 corrige o centro da projeção: ver 5.1.1.
+
 Regras que impedem o dado sujo de contaminar o modelo de ML:
 
 - só entram no treino as linhas com estado NORMAL e sem intervalo marcado como sujo, nem no atributo nem no alvo;
@@ -179,16 +203,45 @@ Regras que impedem o dado sujo de contaminar o modelo de ML:
 - em OUTAGE, SURGE ou RECOVERY os atributos chegam neutros (razão 1). O centro da faixa vem do modelo base com o alfa congelado,
   e o LightGBM informa só a largura relativa.
 
-### 5.2 Faixa para o resto do dia
+#### 5.1.1 Centro da projeção (P50)
 
-O LightGBM é medido em 5 minutos e 1 hora. Para horizontes maiores:
+O centro de `snapshots.compute_snapshots` é a projeção base vezes o P50 do LightGBM (`snapshots.lgbm_center`). O P50 é interpolado entre
+os horizontes e volta a 1 depois do último, com a mesma queda `alpha_tau` do alfa. Só vale no estado NORMAL: em OUTAGE, SURGE ou RECOVERY o centro
+continua sendo o modelo base com o alfa congelado. O ganho vem de efeitos que o alfa linear não pega, como a hora do dia e a interação com o calendário.
+
+#### 5.1.2 Calibração conformal (CQR)
+
+Os quantis do LightGBM saem tortos quando o treino é pequeno (Romano, Patterson e Candès, 2019). `quantile_model.train` separa os últimos
+`calibration_days` (28) dias do treino e ajusta o LightGBM nos anteriores. Em cada par (canal, horizonte) calcula-se, nos dias separados:
 
 ```text
-largura(h) = interpolação entre 5 min e 1 h                           se h ≤ 12 intervalos
-largura(h) = largura(12) · (h / 12) ^ band_growth_exponent            se h > 12 intervalos    (expoente 0,2)
+score = max(P10 − y, y − P90)                       na escala da razão y / perfil
+Q     = quantil de nível ceil((n+1)·0,8)/n dos scores
+faixa = [P10 − Q, P90 + Q]                          Q < 0 estreita a faixa; a mediana não muda
 ```
 
-O expoente foi calibrado medindo a cobertura em vários horários (veja [RESULTS.md](RESULTS.md)).
+`quantile_model.adjust` aplica a correção em `predict` e em `compute_snapshots`. Com menos de 3·`calibration_days` dias no pool ou menos de 50
+linhas no par, não há calibração. `calibration_days = 0` a desliga. A calibração usa a mesma exclusão de linhas sujas do treino, então ela só vale
+para o estado NORMAL (veja a limitação de `event` em RESULTS.md).
+
+#### 5.1.3 Faixa em evento: idade do alfa
+
+Em OUTAGE, SURGE e RECOVERY o alfa está congelado e envelhece. A faixa usa a largura do LightGBM no horizonte `idade + h`, e não em `h`:
+quem projeta com um alfa de `idade` intervalos atrás tem a incerteza de uma previsão feita nessa distância (`quantile_model.state_age`, `snapshots.band_widths(age=...)`).
+A idade é o número de intervalos fora de NORMAL mais `min_run_bins` (o alfa congelado é o de antes da confirmação). Ela continua crescendo por `post_event_bins` (12)
+depois da volta a NORMAL, porque a cauda da retenção ainda contamina o alfa. Nesse período o centro volta a ser o modelo base, sem a correção do P50.
+`widen_event_band = False` desliga tudo isso.
+
+### 5.2 Faixa para o resto do dia
+
+O LightGBM é medido em 5 min, 15 min, 30 min, 1 h, 2 h, 4 h e 8 h (`horizons = (1, 3, 6, 12, 24, 48, 96)`). Entre esses pontos a largura é interpolada.
+Só depois de 8 horas ela é extrapolada:
+
+```text
+largura(h) = largura(96) · (h / 96) ^ band_growth_exponent            se h > 96 intervalos    (expoente 0,2)
+```
+
+Com a calibração e os horizontes medidos, o expoente quase não atua: o dia tem 288 intervalos e só os últimos horários passam de 8 horas.
 
 ### 5.3 Dias à frente (`snapshots.day_ahead_band`)
 
@@ -218,6 +271,11 @@ não foi medido em vários.
   Em `event` o alvo é a taxa verdadeira, o que teria acontecido, e não o observado sujo.
 - **Modelos de comparação:** `no_cleaning` (o mesmo modelo sem limpeza), `last_week` (o mesmo intervalo 7 dias antes),
   `statsforecast_seasonal_naive` e `statsforecast_mstl` (ajustados no histórico limpo).
+- **Métricas de faixa e probabilísticas:** cobertura, largura, *interval score* (Gneiting e Raftery, 2007: largura mais 2/α vezes o quanto o alvo
+  ficou fora; menor é melhor) e pinball P10/P90, os dois últimos relativos à média do alvo. O erro dos métodos traz também o `mase` (erro
+  contra o observado dividido pelo erro do "mesmo bin 7 dias antes" nas 4 semanas anteriores; abaixo de 1 vence o ingênuo sazonal).
+- **Origem móvel e várias seeds (`backtest.py`, `uv run cli.py backtest`):** repete a avaliação em períodos consecutivos e, com `--seeds`,
+  em vários históricos simulados. Entrega média, desvio e número de execuções. Uma diferença menor que o desvio é sorteio.
 - **Sem espiar o futuro:** para prever um dia só entram dias anteriores ao início do período avaliado.
 - **Ajuste dos parâmetros:** `tuning.py` escolhe numa janela de validação (dias 50 a 21 antes do último dia dos dados) e confere na de teste (últimos 20 dias).
 
@@ -271,11 +329,20 @@ Todos ficam em `Config` (`sanecast/config.py`). Os principais:
 | `cleaning_k` | 7 | dias parecidos na referência da limpeza |
 | `low_ratio`, `high_ratio` | 0,55, 1,45 | limiares de queda e de pico anormal |
 | `min_run_bins` | 3 | intervalos seguidos para confirmar um evento (15 min) |
+| `fast_low_ratio`, `fast_high_ratio`, `fast_run_bins`, `fast_z` | 0,35, 1,8, 1, 6 | via rápida: 1 intervalo extremo e fora do ruído de contagem confirma o evento (0 e infinito desligam) |
+| `slow_window`, `slow_lag`, `slow_low_ratio`, `slow_high_ratio`, `slow_run_bins`, `slow_z` | 12, 12, 0,88, 1,14, 6, 6 | via lenta: soma de `slow_window` intervalos contra o alfa de `slow_lag` intervalos antes (`slow_window=0` desliga) |
+| `edge_step` | 1,4 | mudança mínima da razão na borda de um trecho sujo; 1 desliga |
+| `level_knots`, `level_knot_scale`, `trend_cap_days` | (90, 30), 1000, 7 | dobras da tendência do nível, a penalidade extra delas e o limite da extrapolação em dias |
 | `retention_exit_ratio`, `retention_margin_bins` | 1,10, 2 | a retenção termina quando a razão fica abaixo de 1,10 por `min_run_bins` intervalos, mais 2 de margem |
 | `max_event_bins` | 288 | duração máxima de um estado de evento, em intervalos (um dia) |
 | `alpha_target_count`, `alpha_min_window`, `alpha_max_window` | 3000, 6, 72 | transações que a janela do alfa deve juntar e seus limites, em intervalos |
 | `alpha_prior_bins`, `alpha_tau` | 6, 24 | peso do alfa anterior e queda do efeito do alfa com o horizonte |
-| `band_growth_exponent` | 0,2 | crescimento da faixa depois de 1 h |
-| `horizons` | (1, 12) | horizontes medidos pelo LightGBM, em intervalos |
+| `band_growth_exponent` | 0,2 | crescimento da faixa depois do último horizonte (8 h) |
+| `horizons` | (1, 3, 6, 12, 24, 48, 96) | horizontes medidos pelo LightGBM, em intervalos |
+| `recovery_low`, `recovery_high` | 0,8, 1,25 | limites da faixa de retorno a NORMAL |
+| `recovery_margin`, `recovery_z` | 0,05, 2,5 | meia-largura mínima da faixa de retorno e quantos desvios do ruído de contagem ela cobre |
+| `widen_event_band`, `post_event_bins` | `True`, 12 | faixa em evento usa o horizonte `idade + h`; intervalos de idade depois do evento |
+| `calibration_days` | 28 | dias separados do treino para a calibração conformal (0 desliga) |
+| `ridge_grid` | `()` | candidatos de ridge para a validação temporal (vazio usa `1e-3`) |
 
 Para testar uma variação, use `Config(profile_k=15)` ou acrescente uma linha em `GRID` (`sanecast/tuning.py`) e execute `uv run cli.py tune`.
